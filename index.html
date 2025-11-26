@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watermark Remover - Xóa Logo Chuyên Nghiệp</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .upload-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .upload-box {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-box:hover {
+            border-color: #764ba2;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .upload-box input[type="file"] {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 4em;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            font-size: 1.2em;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .upload-subtext {
+            color: #666;
+            margin-top: 10px;
+        }
+
+        .canvas-section {
+            display: none;
+            margin-bottom: 30px;
+        }
+
+        .canvas-wrapper {
+            position: relative;
+            display: inline-block;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            max-width: 100%;
+        }
+
+        #imageCanvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            cursor: crosshair;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #4b6cb7 0%, #182848 100%);
+            color: white;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .instructions {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 5px solid #eb3349;
+        }
+
+        .instructions h3 {
+            color: #d63031;
+            margin-bottom: 10px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #333;
+        }
+
+        .instructions li {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+
+        .status-bar {
+            display: none;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .status-bar.success {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #27ae60;
+            display: block;
+        }
+
+        .status-bar.processing {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            color: #e67e22;
+            display: block;
+        }
+
+        .rectangles-list {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .rectangles-list h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .rectangle-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            margin: 5px 0;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .rectangle-item span {
+            color: #333;
+            font-size: 0.9em;
+        }
+
+        .delete-rect-btn {
+            padding: 5px 15px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .delete-rect-btn:hover {
+            background: #c0392b;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .controls {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        .loading-spinner {
+            display: none;
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .preview-section {
+            display: none;
+            margin-top: 30px;
+            text-align: center;
+        }
+
+        .preview-section h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .preview-canvas-wrapper {
+            display: inline-block;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            max-width: 100%;
+        }
+
+        #previewCanvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎨 Watermark Remover</h1>
+            <p>Xóa logo và watermark từ ảnh một cách chuyên nghiệp</p>
+        </div>
+
+        <div class="main-content">
+            <div class="upload-section">
+                <div class="upload-box" onclick="document.getElementById('fileInput').click()">
+                    <input type="file" id="fileInput" accept="image/*">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">Nhấp để tải ảnh lên</div>
+                    <div class="upload-subtext">Hỗ trợ: JPG, PNG, GIF</div>
+                </div>
+            </div>
+
+            <div class="instructions">
+                <h3>📝 Hướng dẫn sử dụng:</h3>
+                <ol>
+                    <li>Tải ảnh lên bằng cách nhấp vào khung trên</li>
+                    <li>Giữ chuột và kéo để vẽ hình chữ nhật bao quanh vùng watermark</li>
+                    <li>Có thể vẽ nhiều vùng khác nhau nếu cần</li>
+                    <li>Nhấn "Xóa Watermark" để xử lý</li>
+                    <li>Tải ảnh đã xử lý về máy</li>
+                </ol>
+            </div>
+
+            <div class="canvas-section" id="canvasSection">
+                <div style="text-align: center;">
+                    <div class="canvas-wrapper">
+                        <canvas id="imageCanvas"></canvas>
+                    </div>
+                </div>
+
+                <div class="rectangles-list" id="rectanglesList" style="display: none;">
+                    <h4>Vùng watermark đã chọn:</h4>
+                    <div id="rectanglesContainer"></div>
+                </div>
+
+                <div class="controls">
+                    <button class="btn btn-primary" id="selectBtn" onclick="toggleDrawMode()">
+                        <span>✏️</span> Chọn vùng watermark
+                    </button>
+                    <button class="btn btn-success" id="removeBtn" onclick="removeWatermark()" disabled>
+                        <span>🔧</span> Xóa Watermark
+                    </button>
+                    <button class="btn btn-danger" id="clearBtn" onclick="clearSelections()">
+                        <span>🗑️</span> Xóa vùng chọn
+                    </button>
+                    <button class="btn btn-secondary" id="resetBtn" onclick="resetImage()">
+                        <span>↩️</span> Tải ảnh mới
+                    </button>
+                </div>
+
+                <div class="loading-spinner" id="loadingSpinner"></div>
+                <div class="status-bar" id="statusBar"></div>
+            </div>
+
+            <div class="preview-section" id="previewSection">
+                <h3>✨ Kết quả:</h3>
+                <div class="preview-canvas-wrapper">
+                    <canvas id="previewCanvas"></canvas>
+                </div>
+                <div class="controls">
+                    <button class="btn btn-success" onclick="downloadImage()">
+                        <span>💾</span> Tải ảnh về
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let canvas, ctx, previewCanvas, previewCtx;
+        let originalImage = null;
+        let currentImage = null;
+        let isDrawing = false;
+        let drawMode = false;
+        let startX, startY;
+        let rectangles = [];
+        let tempRect = null;
+
+        // Khởi tạo
+        document.addEventListener('DOMContentLoaded', function() {
+            canvas = document.getElementById('imageCanvas');
+            ctx = canvas.getContext('2d');
+            previewCanvas = document.getElementById('previewCanvas');
+            previewCtx = previewCanvas.getContext('2d');
+
+            document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            canvas.addEventListener('mouseleave', handleMouseUp);
+
+            // Touch support
+            canvas.addEventListener('touchstart', handleTouchStart);
+            canvas.addEventListener('touchmove', handleTouchMove);
+            canvas.addEventListener('touchend', handleTouchEnd);
+        });
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    originalImage = img;
+                    currentImage = img;
+                    displayImage(img);
+                    document.getElementById('canvasSection').style.display = 'block';
+                    document.querySelector('.upload-section').style.display = 'none';
+                    rectangles = [];
+                    updateRectanglesList();
+                    showStatus('Ảnh đã tải lên thành công! Bắt đầu chọn vùng watermark.', 'success');
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function displayImage(img) {
+            const maxWidth = 1000;
+            const maxHeight = 800;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxWidth) {
+                height = (height * maxWidth) / width;
+                width = maxWidth;
+            }
+            if (height > maxHeight) {
+                width = (width * maxHeight) / height;
+                height = maxHeight;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+
+            drawRectangles();
+        }
+
+        function toggleDrawMode() {
+            drawMode = !drawMode;
+            const btn = document.getElementById('selectBtn');
+            if (drawMode) {
+                btn.textContent = '⏸️ Dừng chọn';
+                btn.style.background = 'linear-gradient(135deg, #eb3349 0%, #f45c43 100%)';
+                canvas.style.cursor = 'crosshair';
+            } else {
+                btn.textContent = '✏️ Chọn vùng watermark';
+                btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                canvas.style.cursor = 'default';
+            }
+        }
+
+        function getCanvasCoordinates(event) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            let clientX, clientY;
+            if (event.touches && event.touches.length > 0) {
+                clientX = event.touches[0].clientX;
+                clientY = event.touches[0].clientY;
+            } else {
+                clientX = event.clientX;
+                clientY = event.clientY;
+            }
+
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function handleMouseDown(event) {
+            if (!drawMode) return;
+            const coords = getCanvasCoordinates(event);
+            startX = coords.x;
+            startY = coords.y;
+            isDrawing = true;
+        }
+
+        function handleMouseMove(event) {
+            if (!isDrawing || !drawMode) return;
+            const coords = getCanvasCoordinates(event);
+            tempRect = {
+                x: Math.min(startX, coords.x),
+                y: Math.min(startY, coords.y),
+                width: Math.abs(coords.x - startX),
+                height: Math.abs(coords.y - startY)
+            };
+            redrawCanvas();
+        }
+
+        function handleMouseUp(event) {
+            if (!isDrawing || !drawMode) return;
+            isDrawing = false;
+            if (tempRect && tempRect.width > 10 && tempRect.height > 10) {
+                rectangles.push(tempRect);
+                updateRectanglesList();
+                document.getElementById('removeBtn').disabled = false;
+            }
+            tempRect = null;
+            redrawCanvas();
+        }
+
+        function handleTouchStart(event) {
+            event.preventDefault();
+            handleMouseDown(event);
+        }
+
+        function handleTouchMove(event) {
+            event.preventDefault();
+            handleMouseMove(event);
+        }
+
+        function handleTouchEnd(event) {
+            event.preventDefault();
+            handleMouseUp(event);
+        }
+
+        function redrawCanvas() {
+            ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+            drawRectangles();
+            if (tempRect) {
+                ctx.strokeStyle = '#ff0000';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]);
+                ctx.strokeRect(tempRect.x, tempRect.y, tempRect.width, tempRect.height);
+                ctx.setLineDash([]);
+            }
+        }
+
+        function drawRectangles() {
+            rectangles.forEach((rect, index) => {
+                ctx.strokeStyle = '#00ff00';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+                ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+
+                ctx.fillStyle = '#00ff00';
+                ctx.font = 'bold 16px Arial';
+                ctx.fillText(`#${index + 1}`, rect.x + 5, rect.y + 20);
+            });
+        }
+
+        function updateRectanglesList() {
+            const container = document.getElementById('rectanglesContainer');
+            const listDiv = document.getElementById('rectanglesList');
+
+            if (rectangles.length === 0) {
+                listDiv.style.display = 'none';
+                return;
+            }
+
+            listDiv.style.display = 'block';
+            container.innerHTML = '';
+
+            rectangles.forEach((rect, index) => {
+                const item = document.createElement('div');
+                item.className = 'rectangle-item';
+                item.innerHTML = `
+                    <span>Vùng #${index + 1}: ${Math.round(rect.width)} x ${Math.round(rect.height)} px</span>
+                    <button class="delete-rect-btn" onclick="deleteRectangle(${index})">Xóa</button>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function deleteRectangle(index) {
+            rectangles.splice(index, 1);
+            updateRectanglesList();
+            redrawCanvas();
+            if (rectangles.length === 0) {
+                document.getElementById('removeBtn').disabled = true;
+            }
+        }
+
+        function clearSelections() {
+            rectangles = [];
+            tempRect = null;
+            updateRectanglesList();
+            redrawCanvas();
+            document.getElementById('removeBtn').disabled = true;
+            showStatus('Đã xóa tất cả vùng chọn', 'success');
+        }
+
+        function resetImage() {
+            document.getElementById('canvasSection').style.display = 'none';
+            document.getElementById('previewSection').style.display = 'none';
+            document.querySelector('.upload-section').style.display = 'block';
+            document.getElementById('fileInput').value = '';
+            rectangles = [];
+            originalImage = null;
+            currentImage = null;
+            hideStatus();
+        }
+
+        async function removeWatermark() {
+            if (rectangles.length === 0) {
+                alert('Vui lòng chọn ít nhất một vùng watermark!');
+                return;
+            }
+
+            showStatus('Đang xử lý... Vui lòng đợi', 'processing');
+            document.getElementById('loadingSpinner').style.display = 'block';
+            document.getElementById('removeBtn').disabled = true;
+
+            // Tạo canvas tạm để xử lý
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+
+            // Xử lý từng vùng watermark
+            for (let rect of rectangles) {
+                await inpaintRegion(tempCtx, rect);
+            }
+
+            // Hiển thị kết quả
+            previewCanvas.width = canvas.width;
+            previewCanvas.height = canvas.height;
+            previewCtx.drawImage(tempCanvas, 0, 0);
+
+            document.getElementById('previewSection').style.display = 'block';
+            document.getElementById('loadingSpinner').style.display = 'none';
+            showStatus('✅ Xóa watermark thành công!', 'success');
+            document.getElementById('removeBtn').disabled = false;
+
+            // Scroll to result
+            document.getElementById('previewSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function inpaintRegion(ctx, rect) {
+            const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+            const data = imageData.data;
+
+            const x = Math.floor(rect.x);
+            const y = Math.floor(rect.y);
+            const width = Math.floor(rect.width);
+            const height = Math.floor(rect.height);
+
+            // Content-aware fill algorithm (simplified inpainting)
+            const iterations = 3;
+
+            for (let iter = 0; iter < iterations; iter++) {
+                for (let j = y; j < y + height; j++) {
+                    for (let i = x; i < x + width; i++) {
+                        if (i < 0 || j < 0 || i >= ctx.canvas.width || j >= ctx.canvas.height) continue;
+
+                        let r = 0, g = 0, b = 0, count = 0;
+                        const radius = 5;
+
+                        // Lấy mẫu từ các pixel xung quanh
+                        for (let dy = -radius; dy <= radius; dy++) {
+                            for (let dx = -radius; dx <= radius; dx++) {
+                                const nx = i + dx;
+                                const ny = j + dy;
+
+                                // Chỉ lấy mẫu từ bên ngoài vùng watermark
+                                if (nx < x || nx >= x + width || ny < y || ny >= y + height) {
+                                    if (nx >= 0 && nx < ctx.canvas.width && ny >= 0 && ny < ctx.canvas.height) {
+                                        const idx = (ny * ctx.canvas.width + nx) * 4;
+                                        const distance = Math.sqrt(dx * dx + dy * dy);
+                                        const weight = 1 / (1 + distance);
+
+                                        r += data[idx] * weight;
+                                        g += data[idx + 1] * weight;
+                                        b += data[idx + 2] * weight;
+                                        count += weight;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (count > 0) {
+                            const idx = (j * ctx.canvas.width + i) * 4;
+                            data[idx] = r / count;
+                            data[idx + 1] = g / count;
+                            data[idx + 2] = b / count;
+                        }
+                    }
+                }
+
+                ctx.putImageData(imageData, 0, 0);
+
+                // Thêm blur nhẹ để làm mượt
+                if (iter < iterations - 1) {
+                    const blurredData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+                    for (let j = y; j < y + height; j++) {
+                        for (let i = x; i < x + width; i++) {
+                            if (i < 1 || j < 1 || i >= ctx.canvas.width - 1 || j >= ctx.canvas.height - 1) continue;
+
+                            const idx = (j * ctx.canvas.width + i) * 4;
+                            let r = 0, g = 0, b = 0;
+
+                            // 3x3 blur kernel
+                            for (let dy = -1; dy <= 1; dy++) {
+                                for (let dx = -1; dx <= 1; dx++) {
+                                    const nidx = ((j + dy) * ctx.canvas.width + (i + dx)) * 4;
+                                    r += data[nidx];
+                                    g += data[nidx + 1];
+                                    b += data[nidx + 2];
+                                }
+                            }
+
+                            blurredData.data[idx] = r / 9;
+                            blurredData.data[idx + 1] = g / 9;
+                            blurredData.data[idx + 2] = b / 9;
+                        }
+                    }
+
+                    for (let j = y; j < y + height; j++) {
+                        for (let i = x; i < x + width; i++) {
+                            const idx = (j * ctx.canvas.width + i) * 4;
+                            data[idx] = blurredData.data[idx];
+                            data[idx + 1] = blurredData.data[idx + 1];
+                            data[idx + 2] = blurredData.data[idx + 2];
+                        }
+                    }
+                }
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+
+            // Simulate processing delay
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        function downloadImage() {
+            const link = document.createElement('a');
+            link.download = 'watermark-removed-' + Date.now() + '.png';
+            link.href = previewCanvas.toDataURL('image/png');
+            link.click();
+            showStatus('✅ Đã tải ảnh về!', 'success');
+        }
+
+        function showStatus(message, type) {
+            const statusBar = document.getElementById('statusBar');
+            statusBar.textContent = message;
+            statusBar.className = 'status-bar ' + type;
+        }
+
+        function hideStatus() {
+            const statusBar = document.getElementById('statusBar');
+            statusBar.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
