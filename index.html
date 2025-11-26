@@ -619,13 +619,21 @@
             hideStatus();
         }
 
+        // ============================================
+        // CRIMINISI PATCH-BASED INPAINTING ALGORITHM
+        // ============================================
+
+        const PATCH_SIZE = 9; // 9x9 patches
+        const SEARCH_RADIUS = 50; // Search within 50 pixels
+        const ALPHA = 255; // Data term weight
+
         async function removeWatermark() {
             if (rectangles.length === 0) {
                 alert('Vui lòng chọn ít nhất một vùng watermark!');
                 return;
             }
 
-            showStatus('Đang xử lý... Vui lòng đợi', 'processing');
+            showStatus('Đang xử lý bằng thuật toán Criminisi... Vui lòng đợi', 'processing');
             document.getElementById('loadingSpinner').style.display = 'block';
             document.getElementById('removeBtn').disabled = true;
 
@@ -641,6 +649,9 @@
                 await inpaintRegion(tempCtx, rect);
             }
 
+            // Apply Poisson blending for final smoothing
+            await poissonBlend(tempCtx, rectangles);
+
             // Hiển thị kết quả
             previewCanvas.width = canvas.width;
             previewCanvas.height = canvas.height;
@@ -648,7 +659,7 @@
 
             document.getElementById('previewSection').style.display = 'block';
             document.getElementById('loadingSpinner').style.display = 'none';
-            showStatus('✅ Xóa watermark thành công!', 'success');
+            showStatus('✅ Xóa watermark thành công với thuật toán Criminisi!', 'success');
             document.getElementById('removeBtn').disabled = false;
 
             // Scroll to result
@@ -656,99 +667,452 @@
         }
 
         async function inpaintRegion(ctx, rect) {
-            const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-            const data = imageData.data;
+            const width = ctx.canvas.width;
+            const height = ctx.canvas.height;
 
+            // Create mask (1 = unknown/fill, 0 = known)
+            const mask = new Uint8Array(width * height);
             const x = Math.floor(rect.x);
             const y = Math.floor(rect.y);
-            const width = Math.floor(rect.width);
-            const height = Math.floor(rect.height);
+            const w = Math.floor(rect.width);
+            const h = Math.floor(rect.height);
 
-            // Content-aware fill algorithm (simplified inpainting)
-            const iterations = 3;
+            // Initialize mask
+            for (let j = y; j < Math.min(y + h, height); j++) {
+                for (let i = x; i < Math.min(x + w, width); i++) {
+                    mask[j * width + i] = 1;
+                }
+            }
 
-            for (let iter = 0; iter < iterations; iter++) {
-                for (let j = y; j < y + height; j++) {
-                    for (let i = x; i < x + width; i++) {
-                        if (i < 0 || j < 0 || i >= ctx.canvas.width || j >= ctx.canvas.height) continue;
+            // Initialize confidence map
+            const confidence = new Float32Array(width * height);
+            for (let i = 0; i < confidence.length; i++) {
+                confidence[i] = mask[i] === 0 ? 1.0 : 0.0;
+            }
 
-                        let r = 0, g = 0, b = 0, count = 0;
-                        const radius = 5;
+            // Main inpainting loop
+            let iteration = 0;
+            const maxIterations = Math.max(w, h) * 2;
 
-                        // Lấy mẫu từ các pixel xung quanh
-                        for (let dy = -radius; dy <= radius; dy++) {
-                            for (let dx = -radius; dx <= radius; dx++) {
-                                const nx = i + dx;
-                                const ny = j + dy;
+            while (iteration < maxIterations) {
+                // Extract boundary
+                const boundary = extractBoundary(mask, width, height);
 
-                                // Chỉ lấy mẫu từ bên ngoài vùng watermark
-                                if (nx < x || nx >= x + width || ny < y || ny >= y + height) {
-                                    if (nx >= 0 && nx < ctx.canvas.width && ny >= 0 && ny < ctx.canvas.height) {
-                                        const idx = (ny * ctx.canvas.width + nx) * 4;
-                                        const distance = Math.sqrt(dx * dx + dy * dy);
-                                        const weight = 1 / (1 + distance);
+                if (boundary.length === 0) break;
 
-                                        r += data[idx] * weight;
-                                        g += data[idx + 1] * weight;
-                                        b += data[idx + 2] * weight;
-                                        count += weight;
-                                    }
-                                }
-                            }
-                        }
+                // Compute priorities for boundary pixels
+                const imageData = ctx.getImageData(0, 0, width, height);
+                const priorities = computePriorities(
+                    imageData.data,
+                    mask,
+                    confidence,
+                    boundary,
+                    width,
+                    height
+                );
 
-                        if (count > 0) {
-                            const idx = (j * ctx.canvas.width + i) * 4;
-                            data[idx] = r / count;
-                            data[idx + 1] = g / count;
-                            data[idx + 2] = b / count;
-                        }
+                if (priorities.length === 0) break;
+
+                // Find highest priority patch
+                let maxPriority = -1;
+                let targetPixel = null;
+
+                for (let i = 0; i < priorities.length; i++) {
+                    if (priorities[i].priority > maxPriority) {
+                        maxPriority = priorities[i].priority;
+                        targetPixel = priorities[i].pixel;
                     }
                 }
 
-                ctx.putImageData(imageData, 0, 0);
+                if (!targetPixel) break;
 
-                // Thêm blur nhẹ để làm mượt
-                if (iter < iterations - 1) {
-                    const blurredData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-                    for (let j = y; j < y + height; j++) {
-                        for (let i = x; i < x + width; i++) {
-                            if (i < 1 || j < 1 || i >= ctx.canvas.width - 1 || j >= ctx.canvas.height - 1) continue;
+                // Find best matching source patch
+                const sourcePixel = findBestMatch(
+                    imageData.data,
+                    mask,
+                    targetPixel,
+                    width,
+                    height
+                );
 
-                            const idx = (j * ctx.canvas.width + i) * 4;
-                            let r = 0, g = 0, b = 0;
+                if (!sourcePixel) break;
 
-                            // 3x3 blur kernel
-                            for (let dy = -1; dy <= 1; dy++) {
-                                for (let dx = -1; dx <= 1; dx++) {
-                                    const nidx = ((j + dy) * ctx.canvas.width + (i + dx)) * 4;
-                                    r += data[nidx];
-                                    g += data[nidx + 1];
-                                    b += data[nidx + 2];
+                // Copy patch from source to target
+                copyPatch(
+                    ctx,
+                    mask,
+                    confidence,
+                    sourcePixel,
+                    targetPixel,
+                    width,
+                    height
+                );
+
+                iteration++;
+
+                // Yield to UI every 10 iterations
+                if (iteration % 10 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+            }
+        }
+
+        function extractBoundary(mask, width, height) {
+            const boundary = [];
+            const halfPatch = Math.floor(PATCH_SIZE / 2);
+
+            for (let y = halfPatch; y < height - halfPatch; y++) {
+                for (let x = halfPatch; x < width - halfPatch; x++) {
+                    const idx = y * width + x;
+
+                    if (mask[idx] === 1) {
+                        // Check if has known neighbor
+                        let hasKnown = false;
+
+                        for (let dy = -1; dy <= 1 && !hasKnown; dy++) {
+                            for (let dx = -1; dx <= 1 && !hasKnown; dx++) {
+                                if (dx === 0 && dy === 0) continue;
+                                const nx = x + dx;
+                                const ny = y + dy;
+                                const nidx = ny * width + nx;
+
+                                if (mask[nidx] === 0) {
+                                    hasKnown = true;
                                 }
                             }
+                        }
 
-                            blurredData.data[idx] = r / 9;
-                            blurredData.data[idx + 1] = g / 9;
-                            blurredData.data[idx + 2] = b / 9;
+                        if (hasKnown) {
+                            boundary.push({ x, y });
                         }
                     }
+                }
+            }
 
-                    for (let j = y; j < y + height; j++) {
-                        for (let i = x; i < x + width; i++) {
-                            const idx = (j * ctx.canvas.width + i) * 4;
-                            data[idx] = blurredData.data[idx];
-                            data[idx + 1] = blurredData.data[idx + 1];
-                            data[idx + 2] = blurredData.data[idx + 2];
+            return boundary;
+        }
+
+        function computePriorities(data, mask, confidence, boundary, width, height) {
+            const priorities = [];
+            const halfPatch = Math.floor(PATCH_SIZE / 2);
+
+            for (let b of boundary) {
+                const { x, y } = b;
+
+                // Compute confidence term
+                const C = computeConfidenceTerm(confidence, mask, x, y, width, height);
+
+                // Compute data term
+                const D = computeDataTerm(data, mask, x, y, width, height);
+
+                // Total priority
+                const priority = C * D;
+
+                priorities.push({ pixel: { x, y }, priority, confidence: C, data: D });
+            }
+
+            return priorities;
+        }
+
+        function computeConfidenceTerm(confidence, mask, x, y, width, height) {
+            const halfPatch = Math.floor(PATCH_SIZE / 2);
+            let sum = 0;
+            let count = 0;
+
+            for (let dy = -halfPatch; dy <= halfPatch; dy++) {
+                for (let dx = -halfPatch; dx <= halfPatch; dx++) {
+                    const nx = x + dx;
+                    const ny = y + dy;
+
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        const idx = ny * width + nx;
+                        sum += confidence[idx];
+                        count++;
+                    }
+                }
+            }
+
+            return count > 0 ? sum / count : 0;
+        }
+
+        function computeDataTerm(data, mask, x, y, width, height) {
+            // Compute gradient
+            const grad = computeGradient(data, x, y, width, height);
+
+            // Compute boundary normal
+            const normal = computeBoundaryNormal(mask, x, y, width, height);
+
+            // Isophote (perpendicular to gradient)
+            const isophoteX = -grad.y;
+            const isophoteY = grad.x;
+
+            // Dot product of isophote and normal
+            const dotProduct = Math.abs(isophoteX * normal.x + isophoteY * normal.y);
+
+            // Normalize by alpha
+            return dotProduct / ALPHA;
+        }
+
+        function computeGradient(data, x, y, width, height) {
+            // Sobel operators
+            const sobelX = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]];
+            const sobelY = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]];
+
+            let gradX = 0;
+            let gradY = 0;
+
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const nx = Math.max(0, Math.min(width - 1, x + dx));
+                    const ny = Math.max(0, Math.min(height - 1, y + dy));
+                    const idx = (ny * width + nx) * 4;
+
+                    // Use grayscale value
+                    const gray = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+
+                    gradX += gray * sobelX[dy + 1][dx + 1];
+                    gradY += gray * sobelY[dy + 1][dx + 1];
+                }
+            }
+
+            const magnitude = Math.sqrt(gradX * gradX + gradY * gradY);
+
+            return {
+                x: magnitude > 0 ? gradX / magnitude : 0,
+                y: magnitude > 0 ? gradY / magnitude : 0,
+                magnitude
+            };
+        }
+
+        function computeBoundaryNormal(mask, x, y, width, height) {
+            let normX = 0;
+            let normY = 0;
+
+            // Gradient of mask
+            if (x > 0 && x < width - 1) {
+                normX = (mask[y * width + (x + 1)] - mask[y * width + (x - 1)]) / 2;
+            }
+
+            if (y > 0 && y < height - 1) {
+                normY = (mask[(y + 1) * width + x] - mask[(y - 1) * width + x]) / 2;
+            }
+
+            const length = Math.sqrt(normX * normX + normY * normY);
+
+            if (length > 0) {
+                normX /= length;
+                normY /= length;
+            }
+
+            return { x: normX, y: normY };
+        }
+
+        function findBestMatch(data, mask, target, width, height) {
+            const halfPatch = Math.floor(PATCH_SIZE / 2);
+            let minDistance = Infinity;
+            let bestMatch = null;
+
+            // Define search window
+            const searchMinX = Math.max(halfPatch, target.x - SEARCH_RADIUS);
+            const searchMaxX = Math.min(width - halfPatch - 1, target.x + SEARCH_RADIUS);
+            const searchMinY = Math.max(halfPatch, target.y - SEARCH_RADIUS);
+            const searchMaxY = Math.min(height - halfPatch - 1, target.y + SEARCH_RADIUS);
+
+            // Search for best matching patch
+            for (let sy = searchMinY; sy <= searchMaxY; sy += 2) {
+                for (let sx = searchMinX; sx <= searchMaxX; sx += 2) {
+                    // Skip if source patch overlaps with unknown region
+                    if (patchOverlapsUnknown(mask, sx, sy, width, height)) {
+                        continue;
+                    }
+
+                    // Compute patch distance (SSD)
+                    const distance = computePatchDistance(
+                        data,
+                        mask,
+                        target.x,
+                        target.y,
+                        sx,
+                        sy,
+                        width,
+                        height
+                    );
+
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        bestMatch = { x: sx, y: sy };
+                    }
+                }
+            }
+
+            return bestMatch;
+        }
+
+        function patchOverlapsUnknown(mask, x, y, width, height) {
+            const halfPatch = Math.floor(PATCH_SIZE / 2);
+
+            for (let dy = -halfPatch; dy <= halfPatch; dy++) {
+                for (let dx = -halfPatch; dx <= halfPatch; dx++) {
+                    const nx = x + dx;
+                    const ny = y + dy;
+
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        if (mask[ny * width + nx] === 1) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        function computePatchDistance(data, mask, tx, ty, sx, sy, width, height) {
+            const halfPatch = Math.floor(PATCH_SIZE / 2);
+            let sum = 0;
+            let count = 0;
+
+            for (let dy = -halfPatch; dy <= halfPatch; dy++) {
+                for (let dx = -halfPatch; dx <= halfPatch; dx++) {
+                    const tnx = tx + dx;
+                    const tny = ty + dy;
+                    const snx = sx + dx;
+                    const sny = sy + dy;
+
+                    if (tnx >= 0 && tnx < width && tny >= 0 && tny < height &&
+                        snx >= 0 && snx < width && sny >= 0 && sny < height) {
+
+                        // Only compare known pixels in target
+                        if (mask[tny * width + tnx] === 0) {
+                            const tidx = (tny * width + tnx) * 4;
+                            const sidx = (sny * width + snx) * 4;
+
+                            // RGB distance
+                            const dr = data[tidx] - data[sidx];
+                            const dg = data[tidx + 1] - data[sidx + 1];
+                            const db = data[tidx + 2] - data[sidx + 2];
+
+                            sum += dr * dr + dg * dg + db * db;
+                            count++;
+                        }
+                    }
+                }
+            }
+
+            return count > 0 ? sum / count : Infinity;
+        }
+
+        function copyPatch(ctx, mask, confidence, source, target, width, height) {
+            const halfPatch = Math.floor(PATCH_SIZE / 2);
+            const imageData = ctx.getImageData(0, 0, width, height);
+            const data = imageData.data;
+
+            // Get target confidence
+            const targetConfidence = computeConfidenceTerm(
+                confidence,
+                mask,
+                target.x,
+                target.y,
+                width,
+                height
+            );
+
+            // Copy pixels
+            for (let dy = -halfPatch; dy <= halfPatch; dy++) {
+                for (let dx = -halfPatch; dx <= halfPatch; dx++) {
+                    const tnx = target.x + dx;
+                    const tny = target.y + dy;
+                    const snx = source.x + dx;
+                    const sny = source.y + dy;
+
+                    if (tnx >= 0 && tnx < width && tny >= 0 && tny < height &&
+                        snx >= 0 && snx < width && sny >= 0 && sny < height) {
+
+                        const tidx = tny * width + tnx;
+
+                        // Only fill unknown pixels
+                        if (mask[tidx] === 1) {
+                            const tpidx = tidx * 4;
+                            const spidx = (sny * width + snx) * 4;
+
+                            // Copy color
+                            data[tpidx] = data[spidx];
+                            data[tpidx + 1] = data[spidx + 1];
+                            data[tpidx + 2] = data[spidx + 2];
+                            data[tpidx + 3] = data[spidx + 3];
+
+                            // Update mask
+                            mask[tidx] = 0;
+
+                            // Update confidence
+                            confidence[tidx] = targetConfidence;
                         }
                     }
                 }
             }
 
             ctx.putImageData(imageData, 0, 0);
+        }
 
-            // Simulate processing delay
-            await new Promise(resolve => setTimeout(resolve, 100));
+        async function poissonBlend(ctx, rects) {
+            const width = ctx.canvas.width;
+            const height = ctx.canvas.height;
+            const imageData = ctx.getImageData(0, 0, width, height);
+            const data = imageData.data;
+
+            // Create mask for all regions
+            const mask = new Uint8Array(width * height);
+            for (let rect of rects) {
+                const x = Math.floor(rect.x);
+                const y = Math.floor(rect.y);
+                const w = Math.floor(rect.width);
+                const h = Math.floor(rect.height);
+
+                for (let j = y; j < Math.min(y + h, height); j++) {
+                    for (let i = x; i < Math.min(x + w, width); i++) {
+                        mask[j * width + i] = 1;
+                    }
+                }
+            }
+
+            // Iterative Poisson solver (simplified)
+            const iterations = 100;
+            const newData = new Uint8ClampedArray(data);
+
+            for (let iter = 0; iter < iterations; iter++) {
+                for (let y = 1; y < height - 1; y++) {
+                    for (let x = 1; x < width - 1; x++) {
+                        const idx = y * width + x;
+
+                        if (mask[idx] === 1) {
+                            const pidx = idx * 4;
+
+                            // For each color channel
+                            for (let c = 0; c < 3; c++) {
+                                const top = newData[((y - 1) * width + x) * 4 + c];
+                                const bottom = newData[((y + 1) * width + x) * 4 + c];
+                                const left = newData[(y * width + (x - 1)) * 4 + c];
+                                const right = newData[(y * width + (x + 1)) * 4 + c];
+
+                                // Average of neighbors
+                                newData[pidx + c] = (top + bottom + left + right) / 4;
+                            }
+                        }
+                    }
+                }
+
+                // Copy back
+                for (let i = 0; i < newData.length; i++) {
+                    data[i] = newData[i];
+                }
+
+                // Yield every 20 iterations
+                if (iter % 20 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+            }
+
+            ctx.putImageData(imageData, 0, 0);
         }
 
         function downloadImage() {
